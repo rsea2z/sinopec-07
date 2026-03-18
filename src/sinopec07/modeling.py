@@ -26,6 +26,21 @@ def time_split(df: pd.DataFrame, target_col: str, train_ratio: float = 0.8) -> t
     return usable.iloc[:split_idx].copy(), usable.iloc[split_idx:].copy()
 
 
+def time_split_three_way(
+    df: pd.DataFrame,
+    target_col: str,
+    train_ratio: float = 0.6,
+    val_ratio: float = 0.2,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    usable = df.loc[df[target_col].notna()].copy()
+    n = len(usable)
+    train_end = int(n * train_ratio)
+    val_end = int(n * (train_ratio + val_ratio))
+    if train_end <= 0 or val_end <= train_end or val_end >= n:
+        raise ValueError("Dataset is too small for three-way split.")
+    return usable.iloc[:train_end].copy(), usable.iloc[train_end:val_end].copy(), usable.iloc[val_end:].copy()
+
+
 def _build_metric_dict(y_test: pd.Series, preds: np.ndarray, train_rows: int, test_rows: int, feature_count: int) -> dict[str, float]:
     y_true = pd.to_numeric(y_test, errors="coerce").to_numpy(dtype=float)
     y_pred = pd.to_numeric(pd.Series(preds), errors="coerce").to_numpy(dtype=float)
