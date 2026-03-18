@@ -12,6 +12,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 METRIC_DIR = ROOT / "results" / "metrics"
 FIGURE_DIR = ROOT / "results" / "figures"
+PREDICTION_DIR = ROOT / "results" / "predictions"
 
 OKABE_ITO = [
     "#E69F00",
@@ -33,10 +34,24 @@ STRATEGY_CN = {
     "px_meta": "PX元集成",
 }
 
+STRATEGY_SHORT = {
+    "naive_persistence": "朴素",
+    "pr_specialist": "PR专项",
+    "residual_search": "残差",
+    "px_meta_ensemble": "PX元",
+    "competition_ensemble": "竞赛",
+}
+
 TRACK_CN = {
     "track1": "赛道一",
     "track2": "赛道二",
     "track3": "赛道三",
+}
+
+CHAIN_CN = {
+    "track1": "原油链",
+    "track2": "聚酯链",
+    "track3": "塑料链",
 }
 
 
@@ -74,7 +89,7 @@ def plot_strategy_heatmap(board: pd.DataFrame) -> None:
     ax.set_xticklabels([f"T+{c}" for c in pivot.columns])
     ax.set_yticks(range(len(pivot.index)))
     ax.set_yticklabels(pivot.index)
-    ax.set_title("各品种各预测期的最优策略相对 Naive 的 RMSE 改进")
+    ax.set_title("各品种各预测期相对 Naive 的 RMSE 改进")
 
     strategy_map = board.set_index(["symbol", "horizon"])["conservative_recommended_strategy"].to_dict()
     for i, symbol in enumerate(pivot.index):
@@ -83,17 +98,10 @@ def plot_strategy_heatmap(board: pd.DataFrame) -> None:
             if np.isnan(value):
                 continue
             strategy = strategy_map.get((symbol, horizon), "naive_persistence")
-            short = {
-                "naive_persistence": "朴素",
-                "pr_specialist": "PR专项",
-                "residual_search": "残差",
-                "px_meta_ensemble": "PX元",
-                "competition_ensemble": "竞赛",
-            }.get(strategy, "其他")
             ax.text(
                 j,
                 i,
-                f"{value:.1f}\n{short}",
+                f"{value:.1f}\n{STRATEGY_SHORT.get(strategy, '其他')}",
                 ha="center",
                 va="center",
                 color="white" if abs(value) > vmax * 0.45 else "black",
@@ -116,7 +124,7 @@ def plot_meaningful_gain_bar(board: pd.DataFrame) -> None:
     ax.axvline(0, color="black", linewidth=0.8)
     ax.set_xlabel("RMSE 改进值")
     ax.set_ylabel("任务")
-    ax.set_title("具有实际意义提升的任务")
+    ax.set_title("具有实质意义提升的任务")
 
     for y, value, strategy in zip(df["任务"], df["test_rmse_gain"], df["conservative_recommended_strategy"]):
         ax.text(value + 0.8, y, STRATEGY_CN.get(strategy, strategy), va="center", fontsize=8)
@@ -159,7 +167,6 @@ def plot_px_comparison() -> None:
 
 
 def plot_pr_comparison() -> None:
-    board = pd.read_csv(METRIC_DIR / "strategy_board.csv")
     comp = pd.read_csv(METRIC_DIR / "competition_ensemble_summary.csv")
     comp = comp.loc[comp["symbol"] == "PR", ["horizon", "test_rmse_gain"]].rename(columns={"test_rmse_gain": "竞赛式集成"})
     residual = pd.read_csv(METRIC_DIR / "residual_search_summary.csv")
@@ -189,9 +196,8 @@ def plot_pr_comparison() -> None:
 
 
 def plot_track_horizon_gain(board: pd.DataFrame) -> None:
-    df = board.copy()
     agg = (
-        df.groupby(["track", "horizon"], as_index=False)["test_rmse_gain"]
+        board.groupby(["track", "horizon"], as_index=False)["test_rmse_gain"]
         .mean()
         .sort_values(["track", "horizon"])
     )
@@ -212,7 +218,7 @@ def plot_track_horizon_gain(board: pd.DataFrame) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels(["原油链", "聚酯链", "塑料链"])
     ax.set_ylabel("平均 RMSE 改进值")
-    ax.set_title("不同赛道与预测期的平均改进水平")
+    ax.set_title("不同赛道与预测期上的平均改进水平")
     ax.legend(frameon=False)
     save_figure(fig, "figure5_track_horizon_gain")
 
@@ -230,11 +236,12 @@ def plot_data_coverage() -> None:
     ax1.set_ylabel("品种")
     ax1.set_title("各品种可用样本规模")
 
-    scatter = ax2.scatter(
+    color_map = {"track1": OKABE_ITO[0], "track2": OKABE_ITO[2], "track3": OKABE_ITO[5]}
+    ax2.scatter(
         df["feature_count"],
         df["avg_missing_ratio"],
         s=df["usable_rows"] / 2,
-        c=[OKABE_ITO[0], OKABE_ITO[0], OKABE_ITO[0], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[5], OKABE_ITO[5]],
+        c=[color_map[t] for t in df["track"]],
         alpha=0.85,
     )
     for _, row in df.iterrows():
@@ -246,8 +253,8 @@ def plot_data_coverage() -> None:
 
 
 def plot_prediction_cases() -> None:
-    px20 = pd.read_csv(ROOT / "results" / "predictions" / "px_meta_ensemble_h20.csv").tail(35).copy()
-    pr5 = pd.read_csv(ROOT / "results" / "predictions" / "pr_specialist_h5.csv").tail(35).copy()
+    px20 = pd.read_csv(PREDICTION_DIR / "px_meta_ensemble_h20.csv").tail(35).copy()
+    pr5 = pd.read_csv(PREDICTION_DIR / "pr_specialist_h5.csv").tail(35).copy()
 
     fig, axes = plt.subplots(2, 1, figsize=(8.4, 6.2), sharex=False)
     ax1, ax2 = axes
@@ -272,7 +279,8 @@ def plot_strategy_distribution(board: pd.DataFrame) -> None:
     counts = board["conservative_recommended_strategy"].value_counts()
     labels = [STRATEGY_CN.get(k, k) for k in counts.index]
     fig, ax = plt.subplots(figsize=(6.6, 4.2))
-    ax.bar(labels, counts.values, color=[OKABE_ITO[7], OKABE_ITO[5], OKABE_ITO[3], OKABE_ITO[2], OKABE_ITO[0]][: len(labels)])
+    colors = [OKABE_ITO[7], OKABE_ITO[5], OKABE_ITO[3], OKABE_ITO[2], OKABE_ITO[0]][: len(labels)]
+    ax.bar(labels, counts.values, color=colors)
     ax.set_ylabel("任务数量")
     ax.set_title("保守策略板中的方法分布")
     for i, v in enumerate(counts.values):
@@ -321,6 +329,109 @@ def plot_workflow_diagram() -> None:
     save_figure(fig, "figure9_workflow_diagram")
 
 
+def plot_simple_task_ranking(board: pd.DataFrame) -> None:
+    df = board.copy()
+    df["任务"] = df["symbol"] + " @ T+" + df["horizon"].astype(str)
+    df = df.sort_values("test_rmse_gain", ascending=True)
+
+    colors = [OKABE_ITO[5] if v < 0 else OKABE_ITO[2] for v in df["test_rmse_gain"]]
+    fig, ax = plt.subplots(figsize=(8.0, 6.2))
+    ax.barh(df["任务"], df["test_rmse_gain"], color=colors)
+    ax.axvline(0, color="black", linewidth=0.9)
+    ax.set_xlabel("相对 Naive 的 RMSE 改进值")
+    ax.set_ylabel("任务")
+    ax.set_title("全部任务效果排名图")
+    save_figure(fig, "figure10_task_ranking")
+
+
+def plot_final_vs_naive(board: pd.DataFrame) -> None:
+    df = board.copy()
+    df["任务"] = df["symbol"] + " @ T+" + df["horizon"].astype(str)
+    df = df.sort_values(["track", "symbol", "horizon"]).reset_index(drop=True)
+    x = np.arange(len(df))
+
+    fig, ax = plt.subplots(figsize=(10.2, 4.4))
+    for i, row in df.iterrows():
+        color = OKABE_ITO[2] if row["test_rmse_gain"] > 0 else OKABE_ITO[5]
+        ax.plot([x[i], x[i]], [row["test_naive_rmse"], row["test_rmse"]], color=color, linewidth=2.0, alpha=0.9)
+        ax.scatter(x[i], row["test_naive_rmse"], color=OKABE_ITO[7], s=24, zorder=3)
+        ax.scatter(x[i], row["test_rmse"], color=color, s=28, zorder=3)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df["任务"], rotation=55, ha="right")
+    ax.set_ylabel("RMSE")
+    ax.set_title("Naive 与最终策略的逐任务对比")
+    ax.scatter([], [], color=OKABE_ITO[7], label="Naive")
+    ax.scatter([], [], color=OKABE_ITO[2], label="优于 Naive")
+    ax.scatter([], [], color=OKABE_ITO[5], label="不如 Naive")
+    ax.legend(frameon=False, ncol=3, loc="upper left")
+    save_figure(fig, "figure11_final_vs_naive")
+
+
+def plot_win_loss_summary(board: pd.DataFrame) -> None:
+    df = board.copy()
+    df["结果"] = np.where(df["test_rmse_gain"] > 0, "优于Naive", "不如Naive")
+    summary = (
+        df.groupby(["track", "结果"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(index=["track1", "track2", "track3"])
+    )
+
+    fig, ax = plt.subplots(figsize=(6.8, 4.2))
+    ax.bar(summary.index.map(CHAIN_CN), summary["优于Naive"], color=OKABE_ITO[2], label="优于Naive")
+    ax.bar(
+        summary.index.map(CHAIN_CN),
+        summary["不如Naive"],
+        bottom=summary["优于Naive"],
+        color=OKABE_ITO[5],
+        label="不如Naive",
+    )
+    ax.set_ylabel("任务数")
+    ax.set_title("各赛道任务胜负分布")
+    ax.legend(frameon=False)
+    save_figure(fig, "figure12_win_loss_summary")
+
+
+def plot_best_task_cards(board: pd.DataFrame) -> None:
+    df = board.loc[board["meaningful_gain"]].copy().sort_values("test_rmse_gain", ascending=False)
+
+    fig, ax = plt.subplots(figsize=(9.5, 3.8))
+    ax.axis("off")
+    card_w = 0.17
+    gap = 0.025
+    start_x = 0.02
+    y = 0.18
+    h = 0.64
+    for idx, (_, row) in enumerate(df.iterrows()):
+        x = start_x + idx * (card_w + gap)
+        color = OKABE_ITO[2] if row["symbol"] == "PX" else OKABE_ITO[5]
+        rect = FancyBboxPatch(
+            (x, y),
+            card_w,
+            h,
+            boxstyle="round,pad=0.02,rounding_size=0.03",
+            linewidth=1.3,
+            edgecolor=color,
+            facecolor=color + "22",
+            transform=ax.transAxes,
+        )
+        ax.add_patch(rect)
+        ax.text(x + card_w / 2, y + 0.46, f'{row["symbol"]}\nT+{int(row["horizon"])}', ha="center", va="center", fontsize=12, transform=ax.transAxes)
+        ax.text(x + card_w / 2, y + 0.24, f'增益 {row["test_rmse_gain"]:.2f}', ha="center", va="center", fontsize=10, transform=ax.transAxes)
+        ax.text(
+            x + card_w / 2,
+            y + 0.10,
+            STRATEGY_CN.get(row["conservative_recommended_strategy"], row["conservative_recommended_strategy"]),
+            ha="center",
+            va="center",
+            fontsize=9,
+            transform=ax.transAxes,
+        )
+    ax.set_title("当前最值得保留的五个专项任务", fontsize=13)
+    save_figure(fig, "figure13_best_task_cards")
+
+
 def build_thesis_summary_table(board: pd.DataFrame) -> None:
     out = board[
         [
@@ -351,6 +462,10 @@ def main() -> None:
     plot_prediction_cases()
     plot_strategy_distribution(board)
     plot_workflow_diagram()
+    plot_simple_task_ranking(board)
+    plot_final_vs_naive(board)
+    plot_win_loss_summary(board)
+    plot_best_task_cards(board)
     build_thesis_summary_table(board)
     print("Saved figures to", FIGURE_DIR)
 
