@@ -432,6 +432,108 @@ def plot_best_task_cards(board: pd.DataFrame) -> None:
     save_figure(fig, "figure13_best_task_cards")
 
 
+def plot_screening_funnel(board: pd.DataFrame) -> None:
+    stages = [
+        ("全部任务", len(board)),
+        ("优于Naive", int((board["test_rmse_gain"] > 0).sum())),
+        ("显著增益", int(board["meaningful_gain"].sum())),
+    ]
+
+    fig, ax = plt.subplots(figsize=(7.8, 4.0))
+    ax.axis("off")
+    widths = [0.88, 0.62, 0.36]
+    y_positions = [0.68, 0.40, 0.14]
+    colors = [OKABE_ITO[1], OKABE_ITO[0], OKABE_ITO[2]]
+
+    for (label, value), width, y, color in zip(stages, widths, y_positions, colors):
+        x = (1 - width) / 2
+        rect = FancyBboxPatch(
+            (x, y),
+            width,
+            0.16,
+            boxstyle="round,pad=0.02,rounding_size=0.03",
+            linewidth=1.2,
+            edgecolor=color,
+            facecolor=color + "22",
+            transform=ax.transAxes,
+        )
+        ax.add_patch(rect)
+        ax.text(
+            0.5,
+            y + 0.08,
+            f"{label}：{value} 个",
+            ha="center",
+            va="center",
+            fontsize=12,
+            transform=ax.transAxes,
+        )
+
+    ax.annotate("", xy=(0.5, 0.56), xytext=(0.5, 0.52), xycoords=ax.transAxes, textcoords=ax.transAxes,
+                arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"))
+    ax.annotate("", xy=(0.5, 0.28), xytext=(0.5, 0.24), xycoords=ax.transAxes, textcoords=ax.transAxes,
+                arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"))
+    ax.set_title("任务筛选漏斗图", fontsize=13)
+    save_figure(fig, "figure14_screening_funnel")
+
+
+def plot_final_strategy_board(board: pd.DataFrame) -> None:
+    df = board.copy().sort_values(["track", "symbol", "horizon"])
+    fig, ax = plt.subplots(figsize=(10.0, 4.6))
+    ax.axis("off")
+
+    cols = [5, 10, 20]
+    rows = ["WTI", "Brent", "SC", "PTA", "PF", "PX", "PR", "PE", "PP"]
+    x0, y0 = 0.18, 0.10
+    cell_w, cell_h = 0.23, 0.08
+
+    for j, h in enumerate(cols):
+        ax.text(x0 + j * cell_w + cell_w / 2, y0 + len(rows) * cell_h + 0.03, f"T+{h}", ha="center", va="bottom", fontsize=11, transform=ax.transAxes)
+    for i, sym in enumerate(rows):
+        ax.text(x0 - 0.03, y0 + (len(rows) - 1 - i) * cell_h + cell_h / 2, sym, ha="right", va="center", fontsize=10, transform=ax.transAxes)
+
+    for i, sym in enumerate(rows):
+        for j, h in enumerate(cols):
+            row = df.loc[(df["symbol"] == sym) & (df["horizon"] == h)].iloc[0]
+            strategy = row["conservative_recommended_strategy"]
+            if strategy == "naive_persistence":
+                edge = OKABE_ITO[7]
+                face = "#F2F2F2"
+            elif "px" in strategy:
+                edge = OKABE_ITO[2]
+                face = OKABE_ITO[2] + "22"
+            else:
+                edge = OKABE_ITO[5]
+                face = OKABE_ITO[5] + "22"
+            x = x0 + j * cell_w
+            y = y0 + (len(rows) - 1 - i) * cell_h
+            rect = FancyBboxPatch(
+                (x, y),
+                cell_w - 0.02,
+                cell_h - 0.01,
+                boxstyle="round,pad=0.01,rounding_size=0.01",
+                linewidth=1.0,
+                edgecolor=edge,
+                facecolor=face,
+                transform=ax.transAxes,
+            )
+            ax.add_patch(rect)
+            ax.text(
+                x + (cell_w - 0.02) / 2,
+                y + (cell_h - 0.01) / 2,
+                STRATEGY_SHORT.get(strategy, "其他"),
+                ha="center",
+                va="center",
+                fontsize=9,
+                transform=ax.transAxes,
+            )
+
+    ax.text(0.03, 0.92, "最终策略板", fontsize=13, transform=ax.transAxes)
+    ax.text(0.03, 0.84, "灰色：回退朴素基线", fontsize=9, transform=ax.transAxes)
+    ax.text(0.03, 0.78, "绿色：PX 专项策略", fontsize=9, transform=ax.transAxes)
+    ax.text(0.03, 0.72, "橙色：PR 专项策略", fontsize=9, transform=ax.transAxes)
+    save_figure(fig, "figure15_final_strategy_board")
+
+
 def build_thesis_summary_table(board: pd.DataFrame) -> None:
     out = board[
         [
@@ -466,6 +568,8 @@ def main() -> None:
     plot_final_vs_naive(board)
     plot_win_loss_summary(board)
     plot_best_task_cards(board)
+    plot_screening_funnel(board)
+    plot_final_strategy_board(board)
     build_thesis_summary_table(board)
     print("Saved figures to", FIGURE_DIR)
 
