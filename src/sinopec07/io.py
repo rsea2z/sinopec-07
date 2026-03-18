@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -26,7 +27,9 @@ def parse_mixed_date(series: pd.Series) -> pd.Series:
         parsed = pd.to_datetime(cleaned, format=fmt, errors="coerce")
         if parsed.notna().sum() == len(cleaned):
             return parsed
-    return pd.to_datetime(cleaned, errors="coerce")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return pd.to_datetime(cleaned, errors="coerce")
 
 
 def clean_numeric_frame(df: pd.DataFrame, skip_columns: Iterable[str]) -> pd.DataFrame:
