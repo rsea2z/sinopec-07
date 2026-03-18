@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
 import numpy as np
 import pandas as pd
 
@@ -187,6 +188,139 @@ def plot_pr_comparison() -> None:
     save_figure(fig, "figure4_pr_method_comparison")
 
 
+def plot_track_horizon_gain(board: pd.DataFrame) -> None:
+    df = board.copy()
+    agg = (
+        df.groupby(["track", "horizon"], as_index=False)["test_rmse_gain"]
+        .mean()
+        .sort_values(["track", "horizon"])
+    )
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    horizons = sorted(agg["horizon"].unique())
+    x = np.arange(3)
+    width = 0.22
+    for idx, horizon in enumerate(horizons):
+        sub = agg.loc[agg["horizon"] == horizon].set_index("track").reindex(["track1", "track2", "track3"])
+        ax.bar(
+            x + (idx - 1) * width,
+            sub["test_rmse_gain"],
+            width=width,
+            label=f"T+{horizon}",
+            color=OKABE_ITO[idx],
+        )
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_xticks(x)
+    ax.set_xticklabels(["原油链", "聚酯链", "塑料链"])
+    ax.set_ylabel("平均 RMSE 改进值")
+    ax.set_title("不同赛道与预测期的平均改进水平")
+    ax.legend(frameon=False)
+    save_figure(fig, "figure5_track_horizon_gain")
+
+
+def plot_data_coverage() -> None:
+    df = pd.read_csv(METRIC_DIR / "dataset_audit.csv")
+    df = df.loc[df["horizon"] == 5, ["track", "symbol", "usable_rows", "feature_count", "avg_missing_ratio"]].copy()
+    df = df.sort_values("usable_rows", ascending=True)
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.4, 4.0), gridspec_kw={"width_ratios": [1.1, 1.0]})
+    ax1, ax2 = axes
+
+    ax1.barh(df["symbol"], df["usable_rows"], color=OKABE_ITO[1])
+    ax1.set_xlabel("可用样本数")
+    ax1.set_ylabel("品种")
+    ax1.set_title("各品种可用样本规模")
+
+    scatter = ax2.scatter(
+        df["feature_count"],
+        df["avg_missing_ratio"],
+        s=df["usable_rows"] / 2,
+        c=[OKABE_ITO[0], OKABE_ITO[0], OKABE_ITO[0], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[2], OKABE_ITO[5], OKABE_ITO[5]],
+        alpha=0.85,
+    )
+    for _, row in df.iterrows():
+        ax2.text(row["feature_count"] + 1, row["avg_missing_ratio"], row["symbol"], fontsize=8, va="center")
+    ax2.set_xlabel("特征数")
+    ax2.set_ylabel("平均缺失率")
+    ax2.set_title("特征维度与缺失水平")
+    save_figure(fig, "figure6_data_coverage")
+
+
+def plot_prediction_cases() -> None:
+    px20 = pd.read_csv(ROOT / "results" / "predictions" / "px_meta_ensemble_h20.csv").tail(35).copy()
+    pr5 = pd.read_csv(ROOT / "results" / "predictions" / "pr_specialist_h5.csv").tail(35).copy()
+
+    fig, axes = plt.subplots(2, 1, figsize=(8.4, 6.2), sharex=False)
+    ax1, ax2 = axes
+
+    ax1.plot(pd.to_datetime(px20["date"]), px20["actual"], label="实际值", color=OKABE_ITO[7], linewidth=1.8)
+    ax1.plot(pd.to_datetime(px20["date"]), px20["naive"], label="Naive", color=OKABE_ITO[1], linewidth=1.4)
+    ax1.plot(pd.to_datetime(px20["date"]), px20["meta_pred"], label="PX元集成", color=OKABE_ITO[2], linewidth=1.8)
+    ax1.set_title("PX @ T+20 测试集预测曲线")
+    ax1.set_ylabel("收盘价")
+    ax1.legend(frameon=False, ncol=3)
+
+    ax2.plot(pd.to_datetime(pr5["date"]), pr5["actual"], label="实际值", color=OKABE_ITO[7], linewidth=1.8)
+    ax2.plot(pd.to_datetime(pr5["date"]), pr5["naive_pred"], label="Naive", color=OKABE_ITO[1], linewidth=1.4)
+    ax2.plot(pd.to_datetime(pr5["date"]), pr5["specialist_pred"], label="PR专项", color=OKABE_ITO[5], linewidth=1.8)
+    ax2.set_title("PR @ T+5 测试集预测曲线")
+    ax2.set_ylabel("收盘价")
+    ax2.legend(frameon=False, ncol=3)
+    save_figure(fig, "figure7_prediction_cases")
+
+
+def plot_strategy_distribution(board: pd.DataFrame) -> None:
+    counts = board["conservative_recommended_strategy"].value_counts()
+    labels = [STRATEGY_CN.get(k, k) for k in counts.index]
+    fig, ax = plt.subplots(figsize=(6.6, 4.2))
+    ax.bar(labels, counts.values, color=[OKABE_ITO[7], OKABE_ITO[5], OKABE_ITO[3], OKABE_ITO[2], OKABE_ITO[0]][: len(labels)])
+    ax.set_ylabel("任务数量")
+    ax.set_title("保守策略板中的方法分布")
+    for i, v in enumerate(counts.values):
+        ax.text(i, v + 0.2, str(v), ha="center", va="bottom", fontsize=9)
+    save_figure(fig, "figure8_strategy_distribution")
+
+
+def plot_workflow_diagram() -> None:
+    fig, ax = plt.subplots(figsize=(10.8, 4.4))
+    ax.axis("off")
+    boxes = [
+        (0.02, 0.24, 0.17, 0.48, "多源数据输入\n交易数据\n+ 基本面数据"),
+        (0.225, 0.24, 0.17, 0.48, "对齐与特征工程\n主力抽取\n+ 多频对齐"),
+        (0.43, 0.24, 0.17, 0.48, "基线与候选模型\nNaive / RF\n残差 / 深度学习"),
+        (0.635, 0.24, 0.17, 0.48, "验证集选择\n窗口搜索\n+ 集成搜索"),
+        (0.84, 0.24, 0.14, 0.48, "最终策略板\nPX/PR专项\n其余回退Naive"),
+    ]
+    colors = [OKABE_ITO[1], OKABE_ITO[0], OKABE_ITO[2], OKABE_ITO[5], OKABE_ITO[7]]
+    for (x, y, w, h, text), color in zip(boxes, colors):
+        rect = FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.02,rounding_size=0.03",
+            linewidth=1.2,
+            edgecolor=color,
+            facecolor=color + "22",
+            transform=ax.transAxes,
+        )
+        ax.add_patch(rect)
+        ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=9.6, transform=ax.transAxes)
+
+    for i in range(len(boxes) - 1):
+        x1 = boxes[i][0] + boxes[i][2]
+        x2 = boxes[i + 1][0]
+        y = 0.50
+        ax.annotate(
+            "",
+            xy=(x2 - 0.01, y),
+            xytext=(x1 + 0.01, y),
+            xycoords=ax.transAxes,
+            textcoords=ax.transAxes,
+            arrowprops=dict(arrowstyle="->", linewidth=1.4, color="black"),
+        )
+    ax.set_title("本文研究框架与实验闭环", fontsize=13)
+    save_figure(fig, "figure9_workflow_diagram")
+
+
 def build_thesis_summary_table(board: pd.DataFrame) -> None:
     out = board[
         [
@@ -212,6 +346,11 @@ def main() -> None:
     plot_meaningful_gain_bar(board)
     plot_px_comparison()
     plot_pr_comparison()
+    plot_track_horizon_gain(board)
+    plot_data_coverage()
+    plot_prediction_cases()
+    plot_strategy_distribution(board)
+    plot_workflow_diagram()
     build_thesis_summary_table(board)
     print("Saved figures to", FIGURE_DIR)
 
